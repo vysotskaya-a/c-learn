@@ -1,0 +1,114 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: clearn
+      POSTGRES_USER: clearn
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-clearn_secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clearn"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  auth-service:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.auth
+    environment:
+      DB_DSN: postgres://clearn:${DB_PASSWORD:-clearn_secret}@postgres:5432/clearn?sslmode=disable&search_path=auth
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      PORT: "8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: unless-stopped
+
+  lms-service:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.lms
+    environment:
+      DB_DSN: postgres://clearn:${DB_PASSWORD:-clearn_secret}@postgres:5432/clearn?sslmode=disable&search_path=lms
+      CODE_RUNNER_URL: http://code-runner:8003
+      GAMIFICATION_URL: http://gamification-service:8004
+      PORT: "8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      code-runner:
+        condition: service_started
+      gamification-service:
+        condition: service_started
+    networks:
+      - internal
+    restart: unless-stopped
+
+  code-runner:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.runner
+    environment:
+      PORT: "8003"
+      SANDBOX_IMAGE: ${SANDBOX_IMAGE:-gcc:13}
+      # DOCKER_HOST is set automatically by the socket mount
+    volumes:
+      # Docker socket mount — allows code-runner to create sandbox containers
+      # Works on both Linux (/var/run/docker.sock) and macOS Docker Desktop
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Grant access to Docker socket
+    user: root
+    networks:
+      - internal
+    restart: unless-stopped
+
+  gamification-service:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.gamification
+    environment:
+      DB_DSN: postgres://clearn:${DB_PASSWORD:-clearn_secret}@postgres:5432/clearn?sslmode=disable&search_path=gamification
+      PORT: "8004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - internal
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.gateway
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      LMS_SERVICE_URL: http://lms-service:8002
+      GAMIFICATION_SERVICE_URL: http://gamification-service:8004
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+    depends_on:
+      - auth-service
+      - lms-service
+      - gamification-service
+    networks:
+      - internal
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+
+networks:
+  internal:
+    driver: bridge
