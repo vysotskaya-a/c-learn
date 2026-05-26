@@ -11,8 +11,19 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+type userRepository interface {
+	EmailExists(ctx context.Context, email string) (bool, error)
+	UsernameExists(ctx context.Context, username string) (bool, error)
+	CreateUser(ctx context.Context, email, username, passwordHash, role string) (*models.User, error)
+	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
+	GetUserByID(ctx context.Context, id string) (*models.User, error)
+	SaveRefreshToken(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error
+	GetRefreshToken(ctx context.Context, tokenHash string) (id, userID string, expiresAt time.Time, err error)
+	DeleteRefreshToken(ctx context.Context, id string) error
+}
+
 type Service struct {
-	repo *Repository
+	repo userRepository
 	jwt  *JWTManager
 }
 

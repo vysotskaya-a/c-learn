@@ -18,8 +18,16 @@ const (
 	VerdictRuntimeError      = "runtime_error"
 )
 
+type containerRunner interface {
+	CreateContainer(ctx context.Context) (string, error)
+	RemoveContainer(ctx context.Context, containerID string) error
+	CopySourceToContainer(ctx context.Context, containerID, sourceCode string) error
+	Compile(ctx context.Context, containerID string) (*ExecResult, error)
+	RunTest(ctx context.Context, containerID, input string) (*ExecResult, error)
+}
+
 type Service struct {
-	docker *DockerRunner
+	docker containerRunner
 }
 
 func NewService(docker *DockerRunner) *Service {
